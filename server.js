@@ -6,7 +6,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const cookieParser = require('cookie-parser');
-//const mongoSanitize = require('express-mongo-sanitize');
+const mongoSanitize = require('express-mongo-sanitize');
 const xssSanitizer = require('./middleware/xss.middleware');
 const rateLimit = require('express-rate-limit');
 const dotenv = require('dotenv');
@@ -22,34 +22,57 @@ const errorHandler = require('./middleware/error.middleware');
 const app = express();
 const server = http.createServer(app);
 
-// ─── Socket.io Setup ────────────────────────────────────────────────────────
+// ─── Allowed origins ──────────────────────────────────────────────────────────
+// CLIENT_URLS can be a comma-separated list in .env for multiple origins
+// e.g. CLIENT_URLS=https://chatappfrontend-one-zeta.vercel.app,http://localhost:3000
+const getAllowedOrigins = () => {
+  const raw = process.env.CLIENT_URLS || process.env.CLIENT_URL || 'http://localhost:3000';
+  return raw.split(',').map((u) => u.trim()).filter(Boolean);
+};
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    const allowed = getAllowedOrigins();
+    // Allow requests with no origin (Postman, server-to-server, mobile apps)
+    if (!origin) return callback(null, true);
+    if (allowed.includes(origin)) return callback(null, true);
+    console.warn(`CORS blocked origin: ${origin}`);
+    callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
+  credentials: true,                  // Required for cookies
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,          // Some browsers choke on 200 for OPTIONS
+};
+
+// ─── Socket.io Setup ──────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'http://localhost:3000',
+    origin: (origin, callback) => {
+      const allowed = getAllowedOrigins();
+      if (!origin || allowed.includes(origin)) return callback(null, true);
+      callback(new Error(`Origin ${origin} not allowed`));
+    },
     methods: ['GET', 'POST'],
     credentials: true,
   },
 });
 
-// Store io instance globally for use in controllers
 app.set('io', io);
 initSocket(io);
 
-// ─── Security Middleware ─────────────────────────────────────────────────────
-app.use(helmet({
-  crossOriginResourcePolicy: { policy: 'cross-origin' },
-}));
+// ─── Security Middleware ──────────────────────────────────────────────────────
+app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 
-app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+// CORS must be before all routes and before cookieParser
+app.use(cors(corsOptions));
 
-// Global rate limiter
+// Explicitly handle preflight for all routes
+app.options('*', cors(corsOptions));
+
+// ─── Rate Limiting ────────────────────────────────────────────────────────────
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 100,
   message: { success: false, message: 'Too many requests, please try again later.' },
   standardHeaders: true,
@@ -57,28 +80,24 @@ const limiter = rateLimit({
 });
 app.use('/api', limiter);
 
-// Stricter rate limit for auth routes
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 10000,
+  max: 20,
   message: { success: false, message: 'Too many auth attempts, please try again later.' },
 });
 app.use('/api/auth', authLimiter);
 
-// ─── Body Parsing & Sanitization ─────────────────────────────────────────────
-app.use(express.json({ limit: '10kb' }));       // Limit body size
+// ─── Body Parsing & Sanitization ──────────────────────────────────────────────
+app.use(express.json({ limit: '10kb' }));
 app.use(express.urlencoded({ extended: true, limit: '10kb' }));
 app.use(cookieParser());
-//app.use(mongoSanitize());  // Prevent NoSQL injection
-app.use(xssSanitizer);    // Prevent XSS (custom — compatible with Express 4.16+)
+app.use(mongoSanitize());
+app.use(xssSanitizer);
 
-if (process.env.NODE_ENV === 'development') {
-  app.use(morgan('dev'));
-}
+if (process.env.NODE_ENV === 'development') app.use(morgan('dev'));
 
 // ─── Static Files ─────────────────────────────────────────────────────────────
 app.use('/uploads', express.static('uploads'));
-app.use('/uploads/media', express.static('uploads/media'));
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
@@ -101,6 +120,7 @@ mongoose
     console.log('✅ MongoDB connected');
     server.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT} [${process.env.NODE_ENV}]`);
+      console.log(`✅ Allowed origins: ${getAllowedOrigins().join(', ')}`);
     });
   })
   .catch((err) => {
@@ -108,7 +128,6 @@ mongoose
     process.exit(1);
   });
 
-// Handle unhandled rejections
 process.on('unhandledRejection', (err) => {
   console.error('Unhandled Rejection:', err);
   server.close(() => process.exit(1));
