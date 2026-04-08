@@ -26,7 +26,7 @@ const server = http.createServer(app);
 // ─── Socket.io Setup ────────────────────────────────────────────────────────
 const io = new Server(server, {
   cors: {
-    origin: process.env.CLIENT_URL || 'https://chatappfrontend-one-zeta.vercel.app/',
+    origin: process.env.CLIENT_URL || 'https://chatappfrontend-one-zeta.vercel.app',
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -42,7 +42,7 @@ app.use(helmet({
 }));
 
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'https://chatappfrontend-one-zeta.vercel.app/',
+  origin: process.env.CLIENT_URL || 'https://chatappfrontend-one-zeta.vercel.app',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
