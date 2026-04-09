@@ -1,64 +1,76 @@
- const { body, validationResult } = require('express-validator');
+ /**
+ * Manual validation middleware — replaces express-validator entirely.
+ * express-validator v7 changed its internal API in a way that breaks
+ * when body() chains and plain middleware functions are mixed in route arrays.
+ * This approach has zero external dependencies and zero version-sensitivity.
+ */
 
-// ─── Final middleware: collect validation errors and respond ──────────────────
-// This must be used as a SEPARATE middleware argument after the body() chains,
-// NOT mixed into the same array as them. Mixing causes "next is not a function"
-// because express-validator treats every array item as a validator, not Express middleware.
-const validate = (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: 'Validation failed',
-      errors: errors.array().map((e) => ({ field: e.path, message: e.msg })),
-    });
-  }
+// ─── Tiny helper ──────────────────────────────────────────────────────────────
+const fail = (res, errors) =>
+  res.status(400).json({ success: false, message: errors[0], errors });
+
+// ─── Register ─────────────────────────────────────────────────────────────────
+const validateRegister = (req, res, next) => {
+  const { username, email, password } = req.body;
+  const errors = [];
+
+  if (!username || typeof username !== 'string' || username.trim().length < 3)
+    errors.push('Username must be at least 3 characters.');
+  else if (username.trim().length > 20)
+    errors.push('Username cannot exceed 20 characters.');
+  else if (!/^[a-zA-Z0-9_]+$/.test(username.trim()))
+    errors.push('Username can only contain letters, numbers, and underscores.');
+
+  if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim()))
+    errors.push('Please enter a valid email address.');
+
+  if (!password || typeof password !== 'string' || password.length < 8)
+    errors.push('Password must be at least 8 characters.');
+  else if (!/(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/.test(password))
+    errors.push('Password must contain at least one uppercase letter, one lowercase letter, and one number.');
+
+  if (errors.length) return fail(res, errors);
+
+  // Sanitise in place so controller always gets clean values
+  req.body.username = username.trim();
+  req.body.email    = email.trim().toLowerCase();
+
   next();
 };
 
-// ─── Register: array of body() chains only (no validate here) ────────────────
-const registerValidators = [
-  body('username')
-    .trim()
-    .notEmpty().withMessage('Username is required')
-    .isLength({ min: 3, max: 20 }).withMessage('Username must be 3-20 characters')
-    .matches(/^[a-zA-Z0-9_]+$/).withMessage('Username can only contain letters, numbers, underscores'),
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please enter a valid email')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Password is required')
-    .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
-    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase and a number'),
-];
+// ─── Login ────────────────────────────────────────────────────────────────────
+const validateLogin = (req, res, next) => {
+  const { email, password } = req.body;
+  const errors = [];
 
-// ─── Login: array of body() chains only ──────────────────────────────────────
-const loginValidators = [
-  body('email')
-    .trim()
-    .notEmpty().withMessage('Email is required')
-    .isEmail().withMessage('Please enter a valid email')
-    .normalizeEmail(),
-  body('password')
-    .notEmpty().withMessage('Password is required'),
-];
+  if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim()))
+    errors.push('Please enter a valid email address.');
+  if (!password || typeof password !== 'string' || !password.length)
+    errors.push('Password is required.');
 
-// ─── Message: array of body() chains only ────────────────────────────────────
-const messageValidators = [
-  body('content')
-    .trim()
-    .notEmpty().withMessage('Message content is required')
-    .isLength({ max: 2000 }).withMessage('Message cannot exceed 2000 characters'),
-  body('receiverId')
-    .notEmpty().withMessage('Receiver ID is required')
-    .isMongoId().withMessage('Invalid receiver ID'),
-];
+  if (errors.length) return fail(res, errors);
 
-module.exports = {
-  registerValidators,
-  loginValidators,
-  messageValidators,
-  validate,
+  req.body.email = email.trim().toLowerCase();
+  next();
 };
+
+// ─── Message ──────────────────────────────────────────────────────────────────
+const validateMessage = (req, res, next) => {
+  const { content, receiverId } = req.body;
+  const errors = [];
+
+  if (!content || typeof content !== 'string' || !content.trim().length)
+    errors.push('Message content is required.');
+  else if (content.trim().length > 2000)
+    errors.push('Message cannot exceed 2000 characters.');
+
+  if (!receiverId || typeof receiverId !== 'string' || !/^[a-f\d]{24}$/i.test(receiverId))
+    errors.push('A valid receiver ID is required.');
+
+  if (errors.length) return fail(res, errors);
+
+  req.body.content = content.trim();
+  next();
+};
+
+module.exports = { validateRegister, validateLogin, validateMessage };
