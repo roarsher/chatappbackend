@@ -56,21 +56,41 @@ const userSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// // ─── Hash password before saving ──────────────────────────────────────────────
+// // userSchema.pre('save', async function (next) {
+// //   if (!this.isModified('password')) return next();
+// //   this.password = await bcrypt.hash(this.password, 12);
+// //   next();
+// // });
+// userSchema.pre('save', async function () {
+//   if (!this.isModified('password')) return;
+//   this.password = await bcrypt.hash(this.password, 12);
+// });
+
+// // ─── Update passwordChangedAt ──────────────────────────────────────────────────
+// userSchema.pre('save', function (next) {
+//   if (!this.isModified('password') || this.isNew) return next();
+//   this.passwordChangedAt = Date.now() - 1000; // Ensure token is created after
+//   next();
+// });
+
+
+
 // ─── Hash password before saving ──────────────────────────────────────────────
-userSchema.pre('save', async function (next) {
-  if (!this.isModified('password')) return next();
+userSchema.pre('save', async function () {
+  if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, 12);
-  next();
 });
 
 // ─── Update passwordChangedAt ──────────────────────────────────────────────────
-userSchema.pre('save', function (next) {
-  if (!this.isModified('password') || this.isNew) return next();
-  this.passwordChangedAt = Date.now() - 1000; // Ensure token is created after
-  next();
+userSchema.pre('save', function () {
+  if (!this.isModified('password') || this.isNew) return;
+  this.passwordChangedAt = Date.now() - 1000;
 });
 
 // ─── Instance Methods ──────────────────────────────────────────────────────────
+
+
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
