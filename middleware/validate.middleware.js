@@ -1,6 +1,9 @@
  const { body, validationResult } = require('express-validator');
 
-// ─── Run validators and return errors ─────────────────────────────────────────
+// ─── Final middleware: collect validation errors and respond ──────────────────
+// This must be used as a SEPARATE middleware argument after the body() chains,
+// NOT mixed into the same array as them. Mixing causes "next is not a function"
+// because express-validator treats every array item as a validator, not Express middleware.
 const validate = (req, res, next) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -13,7 +16,7 @@ const validate = (req, res, next) => {
   next();
 };
 
-// ─── Register Validators ───────────────────────────────────────────────────────
+// ─── Register: array of body() chains only (no validate here) ────────────────
 const registerValidators = [
   body('username')
     .trim()
@@ -29,10 +32,9 @@ const registerValidators = [
     .notEmpty().withMessage('Password is required')
     .isLength({ min: 8 }).withMessage('Password must be at least 8 characters')
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/).withMessage('Password must contain uppercase, lowercase and a number'),
-  validate,
 ];
 
-// ─── Login Validators ──────────────────────────────────────────────────────────
+// ─── Login: array of body() chains only ──────────────────────────────────────
 const loginValidators = [
   body('email')
     .trim()
@@ -41,10 +43,9 @@ const loginValidators = [
     .normalizeEmail(),
   body('password')
     .notEmpty().withMessage('Password is required'),
-  validate,
 ];
 
-// ─── Message Validators ────────────────────────────────────────────────────────
+// ─── Message: array of body() chains only ────────────────────────────────────
 const messageValidators = [
   body('content')
     .trim()
@@ -53,11 +54,11 @@ const messageValidators = [
   body('receiverId')
     .notEmpty().withMessage('Receiver ID is required')
     .isMongoId().withMessage('Invalid receiver ID'),
-  validate,
 ];
 
 module.exports = {
   registerValidators,
   loginValidators,
   messageValidators,
+  validate,
 };
